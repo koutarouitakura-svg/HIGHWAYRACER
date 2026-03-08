@@ -27,9 +27,9 @@ jobs:
       - name: Build exe
         run: |
           pyinstaller --noconfirm --windowed --onefile --name HighwayRacer ^
-            --add-data "car.png;." ^
-            --add-data "cloud.png;." ^
-            --add-data "title.png;." ^
+            --add-data "subprograms/car.png;." ^
+            --add-data "subprograms/cloud.png;." ^
+            --add-data "subprograms/title.png;." ^
             main.py
         shell: cmd
 
