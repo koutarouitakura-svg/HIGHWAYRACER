@@ -1,11 +1,12 @@
 from .common import pyxel, math, random, json, os, sys, base64, IS_WEB, _ask_open, _ask_save, _HAS_JOY, _pg, _joy_axis, _joy_btn, _joy_hat, SUPABASE_URL, SUPABASE_ANON_KEY
 from .online import OnlineClient, PeerInterpolator
 from .rival import RivalCar
+from .player_progression import PlayerProgressionMixin
 try:
-    import js
+    import js # type: ignore
 except ImportError:
     js = None
-class AppRuntimeMixin:
+class AppRuntimeMixin(PlayerProgressionMixin):
         def __init__(self):
             # 実行ファイルの場所（ベースディレクトリ）を取得
             # Pyxelのapp2exeを使用した場合、sys.executable に exeのパス が入る
@@ -29,6 +30,7 @@ class AppRuntimeMixin:
             self._peer_interp   = {}             # pid -> PeerInterpolator インスタンス
             self.online_room_id = ""
             self.online_my_id   = ""
+            self.online_my_name = ""
             self.online_status  = ""
             self.online_is_host = False        # True=ホスト, False=ゲスト
             self.online_entry_mode = 0         # 0=CREATE, 1=JOIN
@@ -50,6 +52,7 @@ class AppRuntimeMixin:
             self.STATE_RANKING       = 11
             self.STATE_ONLINE_LOBBY  = 12
             self.STATE_ONLINE_ENTRY  = 13
+            self.STATE_NAME_ENTRY    = 14
 
             # 画面遷移フェード
             self.fade_alpha  = 0     # 0=透明, 255=真っ黒
@@ -78,6 +81,8 @@ class AppRuntimeMixin:
             self.ghost_record    = []     # 今走行中の録画バッファ
             self._share_msg       = ""    # エクスポート/インポート結果フィードバック
             self._share_msg_timer = 0
+            self.player_name      = ""
+            self.player_name_input = ""
 
             pyxel.init(256, 192, title="Highway Racer", quit_key=pyxel.KEY_NONE)
 
@@ -107,8 +112,13 @@ class AppRuntimeMixin:
             self.best_lap_time = _init_ranking[0] if _init_ranking else self.best_times.get(self._course_key(), None)
             self.credits  = self.load_credits()
             self.stats    = self.load_stats()
+            self._ensure_player_progression()
             self.car_data = self.load_car_data()
             self.load_options()   # map_pixel_size などを復元
+            self.player_name_input = self.player_name
+            if not self.player_name:
+                self.state = self.STATE_NAME_ENTRY
+            self.online_my_name = self.player_name
             # カスタマイズ画面の選択状態
             self.cust_tab      = 0   # 0=カラー, 1=エンジン, 2=ブレーキ, 3=軽量化
             self.cust_color_sel = 0  # 選択中のカラーインデックス
@@ -298,6 +308,7 @@ class AppRuntimeMixin:
             self.prize_anim_phase = 0  # 演出フェーズ (0=待機, 1=基本賞金加算中, 2=ボーナス加算中, 3=完了)
             self.session_distance = 0.0   # 今レースの走行距離
             self.session_frames   = 0     # 今レースの走行フレーム数
+            self._reset_goal_xp_animation_state()
 
             # スリップストリーム
             self.slipstream_timer  = 0     # 他車の後ろにいる継続フレーム数

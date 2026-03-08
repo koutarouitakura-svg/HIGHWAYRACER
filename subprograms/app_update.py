@@ -1,11 +1,12 @@
 from .common import pyxel, math, random, json, os, sys, base64, IS_WEB, _ask_open, _ask_save, _HAS_JOY, _pg, _joy_axis, _joy_btn, _joy_hat, SUPABASE_URL, SUPABASE_ANON_KEY
 from .online import OnlineClient
+from .player_progression import PlayerProgressionMixin
 try:
-    import js
+    import js # type: ignore
 except ImportError:
     js = None
 import time as _time
-class AppUpdateMixin:
+class AppUpdateMixin(PlayerProgressionMixin):
         def update(self):
             # ── ハンコン仮想キーフラグ（ボタン番号と状態別の役割）──
             # Btn 5 → SPACE    （全画面で決定）
@@ -15,6 +16,7 @@ class AppUpdateMixin:
             # 十字キー → UP/DOWN/LEFT/RIGHT（全画面）
             is_play  = (getattr(self, 'state', -1) == getattr(self, 'STATE_PLAY',  2))
             is_pause = (getattr(self, 'state', -1) == getattr(self, 'STATE_PAUSE', 3))
+            self._ensure_player_progression()
 
             if _HAS_JOY:
                 _pg.event.pump()
@@ -76,7 +78,37 @@ class AppUpdateMixin:
                     self.fade_dir = 0
                 return
 
-            if self.state == self.STATE_TITLE:
+            if self.state == self.STATE_NAME_ENTRY:
+                allowed_keys = [
+                    (pyxel.KEY_A,'A'),(pyxel.KEY_B,'B'),(pyxel.KEY_C,'C'),(pyxel.KEY_D,'D'),
+                    (pyxel.KEY_E,'E'),(pyxel.KEY_F,'F'),(pyxel.KEY_G,'G'),(pyxel.KEY_H,'H'),
+                    (pyxel.KEY_I,'I'),(pyxel.KEY_J,'J'),(pyxel.KEY_K,'K'),(pyxel.KEY_L,'L'),
+                    (pyxel.KEY_M,'M'),(pyxel.KEY_N,'N'),(pyxel.KEY_O,'O'),(pyxel.KEY_P,'P'),
+                    (pyxel.KEY_Q,'Q'),(pyxel.KEY_R,'R'),(pyxel.KEY_S,'S'),(pyxel.KEY_T,'T'),
+                    (pyxel.KEY_U,'U'),(pyxel.KEY_V,'V'),(pyxel.KEY_W,'W'),(pyxel.KEY_X,'X'),
+                    (pyxel.KEY_Y,'Y'),(pyxel.KEY_Z,'Z'),
+                    (pyxel.KEY_0,'0'),(pyxel.KEY_1,'1'),(pyxel.KEY_2,'2'),(pyxel.KEY_3,'3'),
+                    (pyxel.KEY_4,'4'),(pyxel.KEY_5,'5'),(pyxel.KEY_6,'6'),(pyxel.KEY_7,'7'),
+                    (pyxel.KEY_8,'8'),(pyxel.KEY_9,'9'),(pyxel.KEY_MINUS,'-'),(pyxel.KEY_UNDERSCORE,'_'),
+                ]
+                if pyxel.btnp(pyxel.KEY_BACKSPACE) and self.player_name_input:
+                    self.player_name_input = self.player_name_input[:-1]; pyxel.play(1, 1)
+                elif pyxel.btnp(pyxel.KEY_RETURN) or pyxel.btnp(pyxel.KEY_SPACE) or self._vjoy_space:
+                    name = self.player_name_input.strip()[:12]
+                    if name:
+                        self.player_name = name
+                        self.online_my_name = name
+                        self.save_options()
+                        self.state = self.STATE_TITLE
+                        pyxel.play(1, 2)
+                    else:
+                        pyxel.play(1, 4)
+                else:
+                    for key, ch in allowed_keys:
+                        if pyxel.btnp(key) and len(self.player_name_input) < 12:
+                            self.player_name_input += ch; pyxel.play(1, 1)
+
+            elif self.state == self.STATE_TITLE:
                 if pyxel.btnp(pyxel.KEY_SPACE) or self._vjoy_space:
                     self._start_fade(self.STATE_MENU)
                     pyxel.play(1, 2)
@@ -99,41 +131,102 @@ class AppUpdateMixin:
                 if (pyxel.btnp(pyxel.KEY_ESCAPE) or self._vjoy_esc): self._start_fade(self.STATE_TITLE)
 
             elif self.state == self.STATE_OPTIONS:
-                OPT_ITEMS = 5   # TRANSMISSION, MAP DETAIL, WHEEL SENS, CONTROLS, BACK
-                up   = pyxel.btnp(pyxel.KEY_UP) or pyxel.btnp(pyxel.KEY_W) or self._vjoy_up
-                down = pyxel.btnp(pyxel.KEY_DOWN) or pyxel.btnp(pyxel.KEY_S) or self._vjoy_dn
-                if up:   self.opt_focus = (self.opt_focus - 1) % OPT_ITEMS; pyxel.play(1, 1)
-                if down: self.opt_focus = (self.opt_focus + 1) % OPT_ITEMS; pyxel.play(1, 1)
-                if pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.KEY_RETURN) or self._vjoy_space:
-                    pyxel.play(1, 1)
-                    if   self.opt_focus == 0: self.is_automatic = not self.is_automatic
-                    elif self.opt_focus == 1: pass  # MAP DETAIL は左右で操作
-                    elif self.opt_focus == 2: pass  # WHEEL SENS は左右で操作
-                    elif self.opt_focus == 3: pass  # CONTROLS はインフォ表示のみ
-                    elif self.opt_focus == 4: self.save_options(); self._start_fade(self.STATE_MENU)
-                lr_left  = pyxel.btnp(pyxel.KEY_LEFT) or pyxel.btnp(pyxel.KEY_A) or self._vjoy_left
-                lr_right = pyxel.btnp(pyxel.KEY_RIGHT) or pyxel.btnp(pyxel.KEY_D) or self._vjoy_right
-                # MAP DETAIL: 左右で map_pixel_size を 1〜4 で調整
-                if self.opt_focus == 1:
-                    if lr_left:
-                        old = self.map_pixel_size
-                        self.map_pixel_size = max(1, self.map_pixel_size - 1)
-                        if self.map_pixel_size != old:
-                            self._build_map(self.selected_course); pyxel.play(1, 1)
-                    if lr_right:
-                        old = self.map_pixel_size
-                        self.map_pixel_size = min(4, self.map_pixel_size + 1)
-                        if self.map_pixel_size != old:
-                            self._build_map(self.selected_course); pyxel.play(1, 1)
-                # WHEEL SENS: 左右で 1〜10 で調整
-                if self.opt_focus == 2:
-                    if lr_left:
-                        self.wheel_sensitivity = max(1, self.wheel_sensitivity - 1); pyxel.play(1, 1)
-                    if lr_right:
-                        self.wheel_sensitivity = min(10, self.wheel_sensitivity + 1); pyxel.play(1, 1)
-                if (pyxel.btnp(pyxel.KEY_ESCAPE) or self._vjoy_esc):
-                    self.save_options()
-                    self._start_fade(self.STATE_MENU); pyxel.play(1, 1)
+                OPT_ITEMS = 6   # TRANSMISSION, GRAPHICS, WHEEL SENS, PLAYER NAME, CONTROLS, BACK
+
+                # ── プレイヤーネーム編集中 ─────────────────────────────
+                if getattr(self, "player_name_editing", False):
+                    if pyxel.btnp(pyxel.KEY_ESCAPE) or self._vjoy_esc:
+                        self.player_name_editing = False
+                        self.player_name_input = self.player_name
+                        pyxel.play(1, 1)
+
+                    elif pyxel.btnp(pyxel.KEY_BACKSPACE) and self.player_name_input:
+                        self.player_name_input = self.player_name_input[:-1]
+                        pyxel.play(1, 1)
+
+                    elif pyxel.btnp(pyxel.KEY_RETURN) or self._vjoy_space:
+                        new_name = self.player_name_input.strip()[:12]
+                        self.player_name = new_name if new_name else "PLAYER"
+                        self.player_name_input = self.player_name
+                        self.player_name_editing = False
+                        self.save_options()
+                        pyxel.play(1, 2)
+
+                    else:
+                        for key, ch in [
+                            (pyxel.KEY_A,'a'),(pyxel.KEY_B,'b'),(pyxel.KEY_C,'c'),(pyxel.KEY_D,'d'),
+                            (pyxel.KEY_E,'e'),(pyxel.KEY_F,'f'),(pyxel.KEY_G,'g'),(pyxel.KEY_H,'h'),
+                            (pyxel.KEY_I,'i'),(pyxel.KEY_J,'j'),(pyxel.KEY_K,'k'),(pyxel.KEY_L,'l'),
+                            (pyxel.KEY_M,'m'),(pyxel.KEY_N,'n'),(pyxel.KEY_O,'o'),(pyxel.KEY_P,'p'),
+                            (pyxel.KEY_Q,'q'),(pyxel.KEY_R,'r'),(pyxel.KEY_S,'s'),(pyxel.KEY_T,'t'),
+                            (pyxel.KEY_U,'u'),(pyxel.KEY_V,'v'),(pyxel.KEY_W,'w'),(pyxel.KEY_X,'x'),
+                            (pyxel.KEY_Y,'y'),(pyxel.KEY_Z,'z'),
+                            (pyxel.KEY_0,'0'),(pyxel.KEY_1,'1'),(pyxel.KEY_2,'2'),(pyxel.KEY_3,'3'),
+                            (pyxel.KEY_4,'4'),(pyxel.KEY_5,'5'),(pyxel.KEY_6,'6'),(pyxel.KEY_7,'7'),
+                            (pyxel.KEY_8,'8'),(pyxel.KEY_9,'9'),
+                            (pyxel.KEY_MINUS,'-'),(pyxel.KEY_UNDERSCORE,'_'),
+                        ]:
+                            if pyxel.btnp(key) and len(self.player_name_input) < 12:
+                                self.player_name_input += ch
+                                pyxel.play(1, 1)
+
+                # ── 通常のオプション操作 ────────────────────────────────
+                else:
+                    up   = pyxel.btnp(pyxel.KEY_UP) or pyxel.btnp(pyxel.KEY_W) or self._vjoy_up
+                    down = pyxel.btnp(pyxel.KEY_DOWN) or pyxel.btnp(pyxel.KEY_S) or self._vjoy_dn
+                    if up:
+                        self.opt_focus = (self.opt_focus - 1) % OPT_ITEMS
+                        pyxel.play(1, 1)
+                    if down:
+                        self.opt_focus = (self.opt_focus + 1) % OPT_ITEMS
+                        pyxel.play(1, 1)
+
+                    if pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.KEY_RETURN) or self._vjoy_space:
+                        pyxel.play(1, 1)
+                        if self.opt_focus == 0:
+                            self.is_automatic = not self.is_automatic
+                        elif self.opt_focus == 1:
+                            pass  # GRAPHICS は左右で操作
+                        elif self.opt_focus == 2:
+                            pass  # WHEEL SENS は左右で操作
+                        elif self.opt_focus == 3:
+                            self.player_name_editing = True
+                            self.player_name_input = getattr(self, "player_name", "PLAYER")
+                        elif self.opt_focus == 4:
+                            pass  # CONTROLS はフォーカスで表示のみ
+                        elif self.opt_focus == 5:
+                            self.save_options()
+                            self._start_fade(self.STATE_MENU)
+
+                    lr_left  = pyxel.btnp(pyxel.KEY_LEFT) or pyxel.btnp(pyxel.KEY_A) or self._vjoy_left
+                    lr_right = pyxel.btnp(pyxel.KEY_RIGHT) or pyxel.btnp(pyxel.KEY_D) or self._vjoy_right
+
+                    if self.opt_focus == 1:
+                        if lr_left:
+                            old = self.map_pixel_size
+                            self.map_pixel_size = max(1, self.map_pixel_size - 1)
+                            if self.map_pixel_size != old:
+                                self._build_map(self.selected_course)
+                                pyxel.play(1, 1)
+                        if lr_right:
+                            old = self.map_pixel_size
+                            self.map_pixel_size = min(4, self.map_pixel_size + 1)
+                            if self.map_pixel_size != old:
+                                self._build_map(self.selected_course)
+                                pyxel.play(1, 1)
+
+                    if self.opt_focus == 2:
+                        if lr_left:
+                            self.wheel_sensitivity = max(1, self.wheel_sensitivity - 1)
+                            pyxel.play(1, 1)
+                        if lr_right:
+                            self.wheel_sensitivity = min(10, self.wheel_sensitivity + 1)
+                            pyxel.play(1, 1)
+
+                    if pyxel.btnp(pyxel.KEY_ESCAPE) or self._vjoy_esc:
+                        self.save_options()
+                        self._start_fade(self.STATE_MENU)
+                        pyxel.play(1, 1)
 
             elif self.state == self.STATE_MODE_SELECT:
                 if pyxel.btnp(pyxel.KEY_LEFT) or pyxel.btnp(pyxel.KEY_A) or self._vjoy_left or \
@@ -332,6 +425,7 @@ class AppUpdateMixin:
                                 self._sent_join      = False
                                 self._last_join_broadcast_t = 0
                                 self.online_join_active = False
+                                self.online_my_name = self.player_name or self.online_my_name or self.online_my_id
                                 self.online_client   = OnlineClient(
                                     "", self.online_room_id, self.online_my_id)
                                 self.online_status   = "Connecting..."
@@ -378,6 +472,7 @@ class AppUpdateMixin:
                             self._peer_interp    = {}
                             self._sent_join      = False
                             self._last_join_broadcast_t = 0
+                            self.online_my_name = self.player_name or self.online_my_name or self.online_my_id
                             self.online_client   = OnlineClient(
                                 "", self.online_room_id, self.online_my_id)
                             self.online_status   = "Connecting..."
@@ -403,12 +498,14 @@ class AppUpdateMixin:
                         elif mtype == "join" and pid and pid != self.online_my_id:
                             if pid not in self.online_peers:
                                 self.online_peers[pid] = {"x": 0, "y": 0,
-                                                          "angle": 0, "vel": 0}
+                                                          "angle": 0, "vel": 0,
+                                                          "name": msg.get("player_name", pid[:4].upper())}
                                 print(f"[LOBBY] peer追加: {pid}, 合計: {len(self.online_peers)+1}人")
                             # join受信したら自分もjoinを返す（相互認識）
                             self.online_client.send_priority({
                                 "type": "join",
                                 "player_id": self.online_my_id,
+                                "player_name": self.online_my_name,
                             })
 
                         elif mtype == "leave" and pid:
@@ -445,6 +542,7 @@ class AppUpdateMixin:
                             self.online_client.send_priority({
                                 "type": "join",
                                 "player_id": self.online_my_id,
+                                "player_name": self.online_my_name,
                             })
                             print(f"[LOBBY] join送信: {self.online_my_id} → channel={self.online_client._channel}")
 
@@ -511,6 +609,7 @@ class AppUpdateMixin:
             elif self.state == self.STATE_PAUSE:
                 if self.pause_quit_confirm:
                     if pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.KEY_RETURN) or self._vjoy_space or pyxel.btnp(pyxel.KEY_Y):
+                                self._grant_session_distance_xp_now()
                                 self.pause_quit_confirm = False; self.reset(); self._start_fade(self.STATE_MENU)
                     if pyxel.btnp(pyxel.KEY_N) or (pyxel.btnp(pyxel.KEY_ESCAPE) or self._vjoy_esc):
                         self.pause_quit_confirm = False; pyxel.play(1, 1)
@@ -521,7 +620,7 @@ class AppUpdateMixin:
                     if down: self.pause_focus = (self.pause_focus + 1) % 3; pyxel.play(1, 1)
                     if pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.KEY_RETURN) or self._vjoy_space:
                         if   self.pause_focus == 0: self._start_fade(self.STATE_PLAY); pyxel.play(1, 1)
-                        elif self.pause_focus == 1: self.reset(); self._start_fade(self.STATE_PLAY); pyxel.play(1, 2)
+                        elif self.pause_focus == 1: self._grant_session_distance_xp_now(); self.reset(); self._start_fade(self.STATE_PLAY); pyxel.play(1, 2)
                         elif self.pause_focus == 2: self.pause_quit_confirm = True; pyxel.play(1, 1)
                     if (pyxel.btnp(pyxel.KEY_ESCAPE) or self._vjoy_esc): self._start_fade(self.STATE_PLAY); pyxel.play(1, 1)
 
@@ -633,6 +732,7 @@ class AppUpdateMixin:
                     self.online_client.send({
                         "type":      "pos",
                         "player_id": self.online_my_id,
+                        "player_name": self.online_my_name,
                         "x":         self.car_world_x,
                         "y":         self.car_world_y,
                         "angle":     self.car_angle,
@@ -654,6 +754,8 @@ class AppUpdateMixin:
                             if pid not in self._peer_interp:
                                 self._peer_interp[pid] = PeerInterpolator()
                                 self.online_peers[pid]  = {}
+                            if "player_name" in msg:
+                                self.online_peers.setdefault(pid, {})["name"] = msg.get("player_name") or pid[:4].upper()
                             self._peer_interp[pid].push(msg, now_t)
 
                         elif mtype == "goal" and pid and pid != self.online_my_id:
@@ -661,7 +763,7 @@ class AppUpdateMixin:
                             if not hasattr(self, 'online_finish_order'):
                                 self.online_finish_order = []
                             if pid not in [e[0] for e in self.online_finish_order]:
-                                self.online_finish_order.append((pid, pid[:4].upper()))
+                                self.online_finish_order.append((pid, msg.get("player_name", self.online_peers.get(pid, {}).get("name", pid[:4].upper()))))
 
                         elif mtype == "lobby_return" and pid and pid != self.online_my_id:
                             # 相手がロビーに戻った → 自分もロビーに戻る
@@ -954,6 +1056,7 @@ class AppUpdateMixin:
                         self.online_finish_order = []
                         self._start_fade(self.STATE_ONLINE_LOBBY); pyxel.play(1, 2)
                     else:
+                        self._grant_session_distance_xp_now()
                         self.reset()
                         self._start_fade(self.STATE_MENU)
                     return
@@ -990,6 +1093,9 @@ class AppUpdateMixin:
                             self.stats["total_credits"] += total_earned
                             self.save_credits()
                             self.save_stats()
+                    if self.prize_anim_phase >= 3:
+                        self._start_goal_xp_animation_if_needed()
+                    self._update_goal_xp_animation()
 
                 self.kilometer = int(self.velocity * 400) * (-1 if self.is_reverse else 1)
 
@@ -1659,13 +1765,14 @@ class AppUpdateMixin:
                                     self.online_client.send_priority({
                                         "type":      "goal",
                                         "player_id": self.online_my_id,
+                                        "player_name": self.online_my_name,
                                         "finish_time": getattr(self, 'total_race_time', 0),
                                     })
                                     # ゴール順位リストに自分を追加
                                     if not hasattr(self, 'online_finish_order'):
                                         self.online_finish_order = []
                                     if self.online_my_id not in [e[0] for e in self.online_finish_order]:
-                                        self.online_finish_order.append((self.online_my_id, "YOU"))
+                                        self.online_finish_order.append((self.online_my_id, self.online_my_name or "YOU"))
                                 # 賞金計算（順位賞金×周回数×難易度倍率）
                                 # 台数に応じて賞金テーブルを動的生成（1位=1000固定、最下位=50）
                                 total_cars = len(self.rivals) + 1
@@ -1690,6 +1797,7 @@ class AppUpdateMixin:
                                     self.stats["first_count"] += 1
                                 self.stats["total_distance"] += self.session_distance
                                 self.stats["total_frames"]   += self.session_frames
+                                self._queue_goal_xp_award()
                                 self.save_stats()
                                 # ライバルも停止モードへ
                                 for rival in self.rivals:

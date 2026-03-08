@@ -1,6 +1,6 @@
 from .common import pyxel, math, random, json, os, sys, base64, IS_WEB, _ask_open, _ask_save, _HAS_JOY, _pg, _joy_axis, _joy_btn, _joy_hat, SUPABASE_URL, SUPABASE_ANON_KEY
 try:
-    import js
+    import js # type: ignore
 except ImportError:
     js = None
 class AppCourseMixin:

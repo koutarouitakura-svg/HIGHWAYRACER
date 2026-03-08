@@ -1,9 +1,11 @@
 from .common import pyxel, math, random, json, os, sys, base64, IS_WEB, _ask_open, _ask_save, _HAS_JOY, _pg, _joy_axis, _joy_btn, _joy_hat, SUPABASE_URL, SUPABASE_ANON_KEY
 try:
-    import js
+    import js # type: ignore
 except ImportError:
     js = None
-class AppDrawMixin:
+from .player_progression import PlayerProgressionMixin
+
+class AppDrawMixin(PlayerProgressionMixin):
         def draw(self):
             sh_x = random.uniform(-self.shake_amount, self.shake_amount) + self.grass_shake
             sh_y = random.uniform(-self.shake_amount, self.shake_amount)
@@ -628,7 +630,7 @@ class AppDrawMixin:
                 total_cars = len(self.rivals) + 1
                 s = "CONGRATULATIONS! GOAL!!"
                 x_txt = pyxel.width / 2 - len(s) * 2
-                box_h = 90 if not self.is_time_attack else 65
+                box_h = 128 if not self.is_time_attack else 65
                 pyxel.rect(x_txt - 10, pyxel.height / 2 - 40, len(s) * 4 + 20, box_h, 0)
                 pyxel.text(x_txt, pyxel.height / 2 - 35, s, 10)
 
@@ -663,7 +665,25 @@ class AppDrawMixin:
                     if self.prize_anim_phase == 3:
                         pyxel.text(x_txt + 10, total_y + 9, f"TOTAL : {self.credits} CR", 7)
 
-                    pyxel.text(x_txt + 7, pyxel.height / 2 + 8 + 35, "PUSH 'R' TO RESTART", 6)
+                    xp_panel_y = total_y + 22
+                    if self.prize_anim_phase >= 3 and (self.xp_anim_total_gain > 0 or self.xp_anim_active or self.session_xp_awarded):
+                        disp_gain = self.xp_anim_display_gain if self.xp_anim_active else self.xp_anim_total_gain
+                        cur_lv = self.xp_anim_current_level if self.xp_anim_active else self.player_level
+                        cur_xp = self.xp_anim_current_xp if self.xp_anim_active else self.player_xp
+                        req_xp = self.get_required_xp_for_level(cur_lv)
+                        bar_x = x_txt
+                        bar_w = len(s) * 4
+                        pyxel.text(bar_x, xp_panel_y, f"+{disp_gain} XP", 12 if disp_gain > 0 else 5)
+                        pyxel.text(bar_x + bar_w - 24, xp_panel_y, f"LV{cur_lv}", 10)
+                        pyxel.rect(bar_x, xp_panel_y+10, bar_w, 7, 1)
+                        pyxel.rectb(bar_x, xp_panel_y+10, bar_w, 7, 5)
+                        fill_w = (bar_w - 2) if cur_lv >= self.MAX_PLAYER_LEVEL else int((cur_xp / max(1, req_xp)) * (bar_w - 2))
+                        if fill_w > 0:
+                            pyxel.rect(bar_x + 1, xp_panel_y + 11, fill_w, 5, 11 if not self.xp_anim_active else 10)
+                        xp_text = "MAX" if cur_lv >= self.MAX_PLAYER_LEVEL else f"{cur_xp}/{req_xp}"
+                        pyxel.text(bar_x + (bar_w - len(xp_text) * 4) // 2, xp_panel_y + 20, xp_text, 7)
+
+                    pyxel.text(x_txt + 7, pyxel.height / 2 + 8 + 68, "PUSH 'R' TO MENU", 6)
 
                 # ── オンライン対戦ゴール順位パネル ──
                 is_online_race = (self.online_client and self.online_client.connected)
@@ -700,7 +720,7 @@ class AppDrawMixin:
                     pyxel.text(px_r + (panel_w - len(hint)*4)//2,
                                py_r + panel_h - 4, hint,
                                10 if (pyxel.frame_count // 15) % 2 == 0 else 7)
-                else:
+                elif self.is_time_attack:
                     # タイムアタックモード：ベストラップを表示
                     if self.is_new_record:
                         col = 7 if (pyxel.frame_count % 20) < 10 else 10
@@ -821,11 +841,10 @@ class AppDrawMixin:
             for i in range(0, H, 4):
                 pyxel.line(0, i, W, i, 1 if i % 8 == 0 else 0)
 
-            # タイトルバー
             pyxel.rect(0, 0, W, 14, 1)
             pyxel.text(W // 2 - 20, 4, "OPTIONS", 10)
 
-            panel_w, panel_h = 210, 130
+            panel_w, panel_h = 210, 138
             px = (W - panel_w) // 2
             py = 22
 
@@ -833,39 +852,43 @@ class AppDrawMixin:
             pyxel.rectb(px, py, panel_w, panel_h, 7)
 
             at_mt = "AT (AUTO)" if self.is_automatic else "MT (MANUAL)"
-
-            # MAP DETAIL ラベル生成
-            detail_labels = {1: "ULTRA FINE", 2: "FINE", 3: "NORMAL", 4: "ROUGH"}
-            detail_lbl = detail_labels.get(self.map_pixel_size, "FINE")
-
-            # WHEEL SENS ラベル
+            quality_labels = {1: "ULTRA", 2: "HIGH", 3: "MEDIUM", 4: "LOW"}
+            quality_lbl = quality_labels.get(self.map_pixel_size, "HIGH")
             sens = getattr(self, 'wheel_sensitivity', 5)
             sens_lbl = f"{sens:2d} / 10"
 
-            # オプション項目: 0=TRANSMISSION, 1=MAP DETAIL, 2=WHEEL SENS, 3=CONTROLS, 4=BACK
+            player_name = getattr(self, 'player_name', 'PLAYER')
+            if getattr(self, 'player_name_editing', False):
+                shown_name = getattr(self, 'player_name_input', player_name)
+                if (pyxel.frame_count // 15) % 2 == 0 and len(shown_name) < 12:
+                    shown_name += "_"
+                name_lbl = f"PLAYER NAME:  {shown_name}"
+            else:
+                name_lbl = f"PLAYER NAME:  {player_name}"
+
             opt_items = [
                 (f"TRANSMISSION: {at_mt}", 10),
-                (f"MAP DETAIL:   {detail_lbl}", 11),
+                (f"GRAPHICS:     {quality_lbl}", 11),
                 (f"WHEEL SENS:   {sens_lbl}", 12),
-                ("CONTROLS",                6),
-                ("BACK",                    6),
+                (name_lbl, 7),
+                ("CONTROLS", 6),
+                ("BACK", 6),
             ]
-            item_h = 20
+            item_h = 18
             for i, (label, col) in enumerate(opt_items):
-                iy = py + 10 + i * item_h
+                iy = py + 8 + i * item_h
                 if i == self.opt_focus:
-                    pyxel.rect(px + 6, iy - 2, panel_w - 12, item_h - 2, 1)
-                    pyxel.rectb(px + 6, iy - 2, panel_w - 12, item_h - 2, 10)
+                    pyxel.rect(px + 6, iy - 2, panel_w - 12, item_h - 1, 1)
+                    pyxel.rectb(px + 6, iy - 2, panel_w - 12, item_h - 1, 10)
                     if (pyxel.frame_count // 8) % 2 == 0:
                         pyxel.text(px + 10, iy + 4, ">", 10)
                     col_draw = 10
                 else:
                     col_draw = col
-                pyxel.text(px + 20, iy + 4, label, col_draw)
+                pyxel.text(px + 20, iy + 4, label[:29], col_draw)
 
-            # MAP DETAIL 選択中: スライダーUI
             if self.opt_focus == 1:
-                bar_y = py + 10 + 1 * item_h + item_h - 2
+                bar_y = py + 8 + 1 * item_h + item_h - 2
                 bar_x = px + 20
                 dot_w = 12
                 for d in range(4):
@@ -874,9 +897,8 @@ class AppDrawMixin:
                     pyxel.rect(dx, bar_y + 1, dot_w, 6, 11 if filled else 1)
                     pyxel.rectb(dx, bar_y + 1, dot_w, 6, 11 if filled else 5)
 
-            # WHEEL SENS 選択中: 10段スライダーUI
             if self.opt_focus == 2:
-                bar_y = py + 10 + 2 * item_h + item_h - 2
+                bar_y = py + 8 + 2 * item_h + item_h - 2
                 bar_x = px + 20
                 dot_w = 14
                 for d in range(10):
@@ -886,29 +908,26 @@ class AppDrawMixin:
                     pyxel.rect(dx, bar_y + 1, dot_w, 6, col_d)
                     pyxel.rectb(dx, bar_y + 1, dot_w, 6, 12 if filled else 5)
 
-            pyxel.text((W - 80) // 2, H - 10, "W/S: MOVE  A/D: ADJUST  ESC: BACK", 5)
-
-            # CONTROLS インフォオーバーレイ
-            if self.opt_focus == 3:
-                ow, oh = 220, 100
+            if self.opt_focus == 4:
+                ow, oh = 220, 84
                 ox = (W - ow) // 2
-                oy = (H - oh) // 2 + 20
+                oy = (H - oh) // 2 + 28
                 pyxel.rect(ox, oy, ow, oh, 0)
                 pyxel.rectb(ox, oy, ow, oh, 11)
                 pyxel.text(ox + (ow - 56) // 2, oy + 5, "--- CONTROLS ---", 11)
                 lines = [
-                    ("ARROW / A or D",       "STEER",          6, 7),
-                    ("W / UP",               "ACCELERATE",     6, 7),
-                    ("S / DOWN",             "BRAKE",          6, 7),
-                    ("MT: Q / E",            "SHIFT UP/DOWN",  6, 7),
-                    ("ESC",                  "PAUSE",          6, 7),
-                    ("R  (pause)",           "RETURN TO MENU", 6, 7),
+                    ("WHEEL",        "STEER",         6, 7),
+                    ("ACCEL PEDAL",  "ACCELERATE",    6, 7),
+                    ("BRAKE PEDAL",  "BRAKE",         6, 7),
+                    ("RIGHT PADDLE", "SHIFT UP",      6, 7),
+                    ("LEFT PADDLE",  "SHIFT DOWN",    6, 7),
+                    ("OPTIONS",      "PAUSE / BACK",  6, 7),
                 ]
                 for li, (key, desc, kc, dc) in enumerate(lines):
                     lx = ox + 8
-                    ly = oy + 18 + li * 12
+                    ly = oy + 18 + li * 10
                     pyxel.text(lx,      ly, key,  kc)
-                    pyxel.text(lx + 72, ly, desc, dc)
+                    pyxel.text(lx + 92, ly, desc, dc)
 
         def draw_status_screen(self):
             W, H = pyxel.width, pyxel.height
@@ -925,7 +944,8 @@ class AppDrawMixin:
             pw, ph = W - 36, H - 36
             pyxel.rect(px, py, pw, ph, 0)
             pyxel.rectb(px, py, pw, ph, 7)
-
+            req_xp = self.get_required_xp_for_level()
+            xp_disp = "MAX" if self.player_level >= self.MAX_PLAYER_LEVEL else f"{self.player_xp} / {req_xp}"
             # ── クレジットブロック（上部）──
             bx, by = px + 8, py + 8
             pyxel.rectb(bx, by, pw - 16, 22, 10)
@@ -952,7 +972,17 @@ class AppDrawMixin:
             dist_km = self.stats.get("total_distance", 0.0) * 0.001
             dist_str = f"{dist_km:.2f} km"
 
+            player_level = self.stats.get("player_level", 0)
+            player_xp = self.stats.get("player_xp", 0)
+            max_level = getattr(self, "MAX_PLAYER_LEVEL", 50)
+            if player_level >= max_level:
+                xp_str = "MAX"
+            else:
+                xp_str = f"{player_xp} / {self.get_required_xp_for_level(player_level)}"
+
             rows = [
+                ("PLAYER LEVEL",    f"LV {player_level}"),
+                ("CURRENT EXP",     xp_str),
                 ("RACES ENTERED",    f"{self.stats.get('race_count', 0)}"),
                 ("1ST PLACE WINS",   f"{self.stats.get('first_count', 0)}"),
                 ("WIN RATE",         f"{(self.stats.get('first_count',0)/max(self.stats.get('race_count',1),1)*100):.1f}%"),
@@ -1069,10 +1099,16 @@ class AppDrawMixin:
                 pyxel.text(rx, ry + 14, "TIME", 9)
                 pyxel.text(rx, ry + 22, "ATTACK", 9)
 
-            # [E] MAKER ボタン
-            pyxel.rect(rx - 2, ry + 36, 46, 12, 1)
-            pyxel.rectb(rx - 2, ry + 36, 46, 12, 14)
-            pyxel.text(rx, ry + 39, "[E] MAKER", 14)
+            # [E] MAKER ボタン（LV50で解放）
+            player_level = self.stats.get("player_level", 0)
+            maker_unlocked = player_level >= getattr(self, "MAX_PLAYER_LEVEL", 50)
+            pyxel.rect(rx - 2, ry + 36, 60, 20, 1)
+            pyxel.rectb(rx - 2, ry + 36, 60, 20, 14 if maker_unlocked else 5)
+            pyxel.text(rx, ry + 39, "[E] MAKER", 14 if maker_unlocked else 5)
+            if maker_unlocked:
+                pyxel.text(rx, ry + 47, "UNLOCKED", 11)
+            else:
+                pyxel.text(rx, ry + 47, f"LV {getattr(self, 'MAX_PLAYER_LEVEL', 50)}", 8)
 
             # ── 操作ヒント ──
             pyxel.text(4, H - 16, "A/D: COURSE", 6)
@@ -1085,14 +1121,14 @@ class AppDrawMixin:
                 pyxel.text(W - 56, H - 8, "[R]:RANKING", 9)
 
             # 共有ヒント（右側パネル下）
-            pyxel.rect(rx - 2, ry + 52, 60, 42, 0)
-            pyxel.rectb(rx - 2, ry + 52, 60, 42, 5)
-            pyxel.text(rx, ry + 55, "SHARE:", 5)
-            pyxel.text(rx, ry + 63, "[X] EXPORT", 6)
-            pyxel.text(rx, ry + 71, "[I] IMPORT", 6)
+            pyxel.rect(rx - 2, ry + 64, 60, 34, 0)
+            pyxel.rectb(rx - 2, ry + 64, 60, 34, 5)
+            pyxel.text(rx, ry + 67, "SHARE:", 5)
+            pyxel.text(rx, ry + 75, "[X] EXPORT", 6)
+            pyxel.text(rx, ry + 83, "[I] IMPORT", 6)
             if self.is_time_attack:
-                pyxel.text(rx, ry + 79, "[G]ghost", 9)
-                pyxel.text(rx + 32, ry + 79, "[L]load", 9)
+                pyxel.text(rx, ry + 91, "[G]ghost", 9)
+                pyxel.text(rx + 32, ry + 91, "[L]load", 9)
 
             # 共有メッセージ（画面中央下部、タイマーが残っている間表示）
             if self._share_msg_timer > 0:
@@ -1618,7 +1654,8 @@ class AppDrawMixin:
                     is_owned   = (i in owned)
                     is_sel     = (i == self.cust_color_sel)
                     is_equip   = (cd["col"] == self.car_color)
-
+                    player_level = self.stats.get("player_level", 0)
+                    pyxel.text(8, content_y-28, f"PLAYER LV {player_level}", 11)
                     border_col = 10 if is_sel else (7 if is_equip else 5)
                     pyxel.rectb(sx - 1, sy - 1, swatch_w + 2, swatch_h + 2, border_col)
                     pyxel.rect(sx, sy, swatch_w, swatch_h, cd["col"])
@@ -1645,6 +1682,7 @@ class AppDrawMixin:
             else:
                 key_map   = {1: "engine_lv", 2: "brake_lv", 3: "weight_lv"}
                 name_map  = {1: "ENGINE", 2: "BRAKE", 3: "WEIGHT"}
+                player_level = self.stats.get("player_level", 0)
                 desc_map  = {
                     1: ["ACCEL UP", "TOP SPEED UP", "HANDLING DOWN"],
                     2: ["BRAKE POWER UP", "", ""],
@@ -1654,11 +1692,13 @@ class AppDrawMixin:
                 lv_key    = key_map[self.cust_tab]
                 cur_lv    = self.car_data[lv_key]
                 next_lv   = cur_lv + 1
+                req_player_lv = max(0, (next_lv - 1) * 3)
                 cost      = next_lv * cost_mult if cur_lv < 10 else 0
 
                 # 現在レベル表示
                 cx = W // 2
                 pyxel.text(cx - 40, content_y, f"{name_map[self.cust_tab]}  LV {cur_lv} / 10", 10 if cur_lv == 10 else 7)
+                pyxel.text(8, content_y-28, f"PLAYER LV {player_level}", 11)
 
                 # レベルバー (10マス)
                 bar_x = (W - 102) // 2
@@ -1674,14 +1714,18 @@ class AppDrawMixin:
                 if cur_lv < 10:
                     cost_str = f"NEXT LV{next_lv}: {cost:,} CR"
                     can_afford = self.credits >= cost
-                    cost_col = 10 if can_afford else 8
+                    can_level = player_level >= req_player_lv
+                    cost_col = 10 if (can_afford and can_level) else 8
                     pyxel.text(cx - len(cost_str) * 2, bar_y + 14, cost_str, cost_col)
+                    req_str = f"REQ PLAYER LV {req_player_lv}"
+                    req_col = 11 if can_level else 8
+                    pyxel.text(cx - len(req_str) * 2, bar_y + 22, req_str, req_col)
                 else:
                     pyxel.text(cx - 16, bar_y + 14, "MAX LEVEL!", 9)
 
                 # ── 性能バー ──
                 perf = self.get_perf_mult()
-                stat_y = bar_y + 28
+                stat_y = bar_y + 36
                 stats_def = [
                     ("ACCEL",    perf["accel"],    10),
                     ("TOP SPEED",perf["max_vel"],   11),
@@ -1709,7 +1753,8 @@ class AppDrawMixin:
                         pyxel.text(W // 2 - len(desc) * 2, stat_y + 68 + di * 8, desc, dcol)
 
                 # 操作ヒント
-                pyxel.text(W // 2 - 48, H - 22, "SPACE/ENTER: UPGRADE", 6 if cur_lv < 10 else 5)
+                hint_col = 6 if (cur_lv < 10 and player_level >= req_player_lv) else 5
+                pyxel.text(W // 2 - 48, H - 22, "SPACE/ENTER: UPGRADE", hint_col)
 
             # ── メッセージ ──
             if self.cust_msg_timer > 0:

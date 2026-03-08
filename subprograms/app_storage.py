@@ -1,6 +1,6 @@
 from .common import pyxel, math, random, json, os, sys, base64, IS_WEB, _ask_open, _ask_save, _HAS_JOY, _pg, _joy_axis, _joy_btn, _joy_hat, SUPABASE_URL, SUPABASE_ANON_KEY
 try:
-    import js
+    import js # type: ignore
 except ImportError:
     js = None
 class AppStorageMixin:
@@ -341,6 +341,8 @@ class AppStorageMixin:
                 "total_credits":   0,   # 総獲得クレジット（使用前の累計）
                 "total_distance":  0.0, # 総走行距離（ワールド単位）
                 "total_frames":    0,   # 総走行フレーム数（30fps換算で秒数計算）
+                "player_level":    0,
+                "player_xp":       0,
             }
             if IS_WEB:
                 try:
@@ -374,12 +376,16 @@ class AppStorageMixin:
                     pass
 
         def load_options(self):
-            """map_pixel_size などのオプションをロードする"""
-            default = {"map_pixel_size": 2, "wheel_sensitivity": 5}
+            """map_pixel_size / wheel_sensitivity / player_name をロードする"""
+            default = {
+                "map_pixel_size": 2,
+                "wheel_sensitivity": 5,
+                "player_name": "PLAYER",
+            }
             if IS_WEB:
                 try:
-                    data = js.window.localStorage.getItem("highway_racer_options")
-                    if data:
+                   data = js.window.localStorage.getItem("highway_racer_options")
+                   if data:
                         default.update(json.loads(data))
                 except Exception:
                     pass
@@ -390,12 +396,21 @@ class AppStorageMixin:
                             default.update(json.load(f))
                     except Exception:
                         pass
-            self.map_pixel_size      = max(1, min(4,  int(default.get("map_pixel_size", 2))))
-            self.wheel_sensitivity   = max(1, min(10, int(default.get("wheel_sensitivity", 5))))
+
+            self.map_pixel_size = max(1, min(4, int(default.get("map_pixel_size", 2))))
+            self.wheel_sensitivity = max(1, min(10, int(default.get("wheel_sensitivity", 5))))
+
+            name = str(default.get("player_name", "PLAYER")).strip()
+            self.player_name = (name[:12] if name else "PLAYER")
+            self.player_name_input = self.player_name
+            self.player_name_editing = False
 
         def save_options(self):
-            data = {"map_pixel_size": self.map_pixel_size,
-                    "wheel_sensitivity": self.wheel_sensitivity}
+            data = {
+                "map_pixel_size": self.map_pixel_size,
+                "wheel_sensitivity": self.wheel_sensitivity,
+                "player_name": getattr(self, "player_name", "PLAYER"),
+            }
             if IS_WEB:
                 try:
                     js.window.localStorage.setItem("highway_racer_options", json.dumps(data))
