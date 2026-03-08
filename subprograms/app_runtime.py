@@ -2,21 +2,40 @@ from .common import pyxel, math, random, json, os, sys, base64, IS_WEB, _ask_ope
 from .online import OnlineClient, PeerInterpolator
 from .rival import RivalCar
 from .player_progression import PlayerProgressionMixin
+from pathlib import Path
 try:
     import js # type: ignore
 except ImportError:
     js = None
 class AppRuntimeMixin(PlayerProgressionMixin):
+        def _project_root_dir(self):
+            if getattr(sys, "frozen", False):
+                return Path(sys.executable).resolve().parent
+            return Path(__file__).resolve().parent.parent
+
+        def _bundle_root_dir(self):
+            if hasattr(sys, "_MEIPASS"):
+                return Path(sys._MEIPASS)
+            return Path(__file__).resolve().parent.parent
+
+        def _asset_path(self, filename):
+            candidates = [
+                self._bundle_root_dir() / "subprograms" / filename,
+                self._bundle_root_dir() / filename,
+                Path(__file__).resolve().parent / filename,
+            ]
+            for path in candidates:
+                if path.exists():
+                    return str(path)
+            raise FileNotFoundError(
+                f"Asset not found: {filename} | searched: "
+                + " / ".join(str(p) for p in candidates)
+            )
         def __init__(self):
             # 実行ファイルの場所（ベースディレクトリ）を取得
             # Pyxelのapp2exeを使用した場合、sys.executable に exeのパス が入る
             exe_name = os.path.basename(sys.executable).lower()
-            if "python" in exe_name or "pyxel" in exe_name:
-                # 通常の .py スクリプトとして実行された場合
-                base_dir = os.path.dirname(os.path.abspath(__file__))
-            else:
-                # app2exeでexe化されて実行された場合 (例: game6.exe)
-                base_dir = os.path.dirname(sys.executable)
+            base_dir = self._project_root_dir()
 
             # ベースディレクトリを元にファイルの絶対パスを作成
             self.save_file = os.path.join(base_dir, "best_times.json")
@@ -88,9 +107,9 @@ class AppRuntimeMixin(PlayerProgressionMixin):
 
             self.setup_sounds()
             self.setup_custom_palette()
-            pyxel.images[0].load(0, 0, "car.png")
-            pyxel.images[1].load(0, 0, "cloud.png")
-            pyxel.images[2].load(0, 0, "title.png")
+            pyxel.images[0].load(0, 0, self._asset_path("car.png"))
+            pyxel.images[1].load(0, 0, self._asset_path("cloud.png"))
+            pyxel.images[2].load(0, 0, self._asset_path("title.png"))
 
             # カスタムコースをファイルから読み込み COURSES に追加
             self._load_custom_courses()
