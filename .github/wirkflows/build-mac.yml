@@ -1,0 +1,43 @@
+name: Build macOS app
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-mac:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyxel pygame websockets pyinstaller
+
+      - name: Build app
+        run: |
+          pyinstaller --noconfirm --windowed --name HighwayRacer \
+            --add-data "car.png:." \
+            --add-data "cloud.png:." \
+            --add-data "title.png:." \
+            main.py
+
+      - name: Zip app
+        run: |
+          cd dist
+          ditto -c -k --sequesterRsrc --keepParent HighwayRacer.app HighwayRacer-mac.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HighwayRacer-mac
+          path: dist/HighwayRacer-mac.zip
