@@ -239,9 +239,9 @@ pip install pyxel pygame "websockets<14"
 ```
 注意として現在のコードではwebsocketsの最新バージョンには対応していません。
 作者の環境は以下の通りです。うまくいかない場合はバージョンを確認してください
-・pyxel 2.6.5
-・pygame 2.6.1
-・websockets 13.0
+- `pyxel 2.6.5`
+- `pygame 2.6.1`
+- `websockets 13.0`
 
 
 ### 主な内容
