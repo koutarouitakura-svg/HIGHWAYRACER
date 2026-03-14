@@ -57,7 +57,7 @@ The author's environment is as follows. If it does not work well, please check t
 
 ### Overview
 
-`game14` is a racing game built with Pyxel. It includes standard races, time attack, grand prix mode, a course maker, and online play.
+`HIGHWAY RACER` is a racing game built with Pyxel. It includes standard races, time attack, grand prix mode, a course maker, and online play.
 
 This project was created with the help of AI.
 
