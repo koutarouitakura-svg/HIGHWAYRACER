@@ -190,7 +190,7 @@ To explain once again, this code was created using AI, so there may be some unre
 ## 日本語
 
 ### 概要
-`HIGHWAYRACING` はPyxelというライブラリを利用し作られたレースゲームです。通常レース、タイムアタック、グランプリ、コースメーカー、オンライン対戦などを遊ぶことができます。
+`HIGHWAYRACER` はPyxelというライブラリを利用し作られたレースゲームです。通常レース、タイムアタック、グランプリ、コースメーカー、オンライン対戦などを遊ぶことができます。
 
 この作品は AI を活用して制作したプロジェクトです。
 
