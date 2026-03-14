@@ -3,6 +3,7 @@ from .online import OnlineClient, PeerInterpolator
 from .rival import RivalCar
 from .player_progression import PlayerProgressionMixin
 from pathlib import Path
+import shutil
 try:
     import js # type: ignore
 except ImportError:
@@ -61,13 +62,16 @@ class AppRuntimeMixin(PlayerProgressionMixin):
                 legacy_path = self._project_root_dir() / name
                 target_path = self.saves_dir / name
                 if legacy_path.exists() and not target_path.exists():
-                    legacy_path.replace(target_path)
+                    shutil.copy2(legacy_path, target_path)
+
+            if getattr(sys, "frozen", False):
+                return
 
             legacy_png_dir = Path(__file__).resolve().parent
             for legacy_path in legacy_png_dir.glob("*.png"):
                 target_path = self.assets_dir / legacy_path.name
                 if not target_path.exists():
-                    legacy_path.replace(target_path)
+                    shutil.copy2(legacy_path, target_path)
 
         def __init__(self):
             # 実行ファイルの場所（ベースディレクトリ）を取得
